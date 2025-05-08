@@ -11,6 +11,7 @@ class EvaluationService {
   final ApiService _apiService = ApiService();
   final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
   static const int _maxStoredResults = 100;
+  String? _authToken;
   
   // Stream for evaluation status updates
   final _evaluationStatusController = StreamController<String>.broadcast();
@@ -24,6 +25,12 @@ class EvaluationService {
   static final EvaluationService _instance = EvaluationService._internal();
   factory EvaluationService() => _instance;
   EvaluationService._internal();
+  
+  // Token eklemek için yeni metot
+  void setAuthToken(String token) {
+    _authToken = token;
+    _apiService.setAuthToken(token);
+  }
   
   // Add a detection result to the recent results list
   void addDetectionResult(SoundDetectionResult result) {

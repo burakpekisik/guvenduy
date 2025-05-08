@@ -13,6 +13,7 @@ class ApiService {
   final String healthEndpoint;
   final String evaluationsEndpoint;
   final SettingsService _settingsService = SettingsService();
+  String? _authToken;
   
   ApiService({
     String? baseUrl,
@@ -21,14 +22,32 @@ class ApiService {
     String? evaluationsEndpoint,
   }) : 
     baseUrl = baseUrl ?? dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000',
-    predictEndpoint = predictEndpoint ?? dotenv.env['API_PREDICT_ENDPOINT'] ?? '/predict/',
+    predictEndpoint = predictEndpoint ?? dotenv.env['API_PREDICT_ENDPOINT'] ?? '/audio/predict',
     healthEndpoint = healthEndpoint ?? dotenv.env['API_HEALTH_ENDPOINT'] ?? '/health',
     evaluationsEndpoint = evaluationsEndpoint ?? dotenv.env['API_EVALUATIONS_ENDPOINT'] ?? '/evaluations/';
   
+  // Token eklemek için yeni metot
+  void setAuthToken(String token) {
+    _authToken = token;
+  }
+  
+  // Header oluşturma yardımcı metodu
+  Map<String, String> _getHeaders({Map<String, String>? additionalHeaders}) {
+    Map<String, String> headers = additionalHeaders ?? {};
+    
+    // Token varsa Authorization header'ı ekle
+    if (_authToken != null) {
+      headers['Authorization'] = 'Bearer $_authToken';
+    }
+    
+    return headers;
+  }
+
   Future<bool> checkHealth() async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl$healthEndpoint'),
+        headers: _getHeaders(),
       ).timeout(const Duration(seconds: 5));
       
       if (response.statusCode == 200) {
@@ -57,6 +76,11 @@ class ApiService {
           audioFile.path,
         ),
       );
+      
+      // Add auth headers if token exists
+      if (_authToken != null) {
+        request.headers['Authorization'] = 'Bearer $_authToken';
+      }
 
       // Send request
       final streamedResponse = await request.send()
@@ -144,9 +168,9 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl$evaluationsEndpoint'),
-        headers: {
+        headers: _getHeaders(additionalHeaders: {
           'Content-Type': 'application/json',
-        },
+        }),
         body: jsonEncode(evaluation.toJson()),
       ).timeout(const Duration(seconds: 5));
       

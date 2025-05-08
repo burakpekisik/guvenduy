@@ -5,6 +5,7 @@ import '../services/audio_service.dart';
 import '../services/sound_detection_service.dart';
 import '../services/settings_service.dart';
 import '../services/evaluation_service.dart';
+import '../services/auth_service.dart';
 import '../models/app_settings.dart';
 import '../screens/settings_screen.dart';
 import '../widgets/swipeable_detection_tile.dart';
@@ -20,6 +21,7 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
   final AudioService _audioService = AudioService();
   final SoundDetectionService _detectionService = SoundDetectionService();
   final EvaluationService _evaluationService = EvaluationService();
+  final AuthService _authService = AuthService();
   
   late TabController _tabController;
   bool _isListening = false;
@@ -44,6 +46,14 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
   Future<void> _setupServices() async {
     await _audioService.init();
     await _detectionService.init();
+    
+    // Get auth token and add it to services that make API calls
+    final String? token = await _authService.getToken();
+    if (token != null) {
+      _detectionService.setAuthToken(token);
+      _evaluationService.setAuthToken(token);
+    }
+    
     await _evaluationService.loadPreviousResults();
   }
   
@@ -155,44 +165,65 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Emergency Sound Detection'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Ayarlar',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
+    return WillPopScope(
+      onWillPop: () async {
+        // Eğer kayıt yapılıyorsa, kullanıcı geri tuşuna bastığında kayıt durdurulsun
+        if (_isListening) {
+          await _stopContinuousListening();
+          return false; // Sayfanın kapatılmasını engelle
+        }
+        return true; // Sayfanın kapatılmasına izin ver
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Ses Tanıma'),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              // Eğer kayıt yapılıyorsa, önce kaydı durdur
+              if (_isListening) {
+                await _stopContinuousListening();
+              }
+              if (!mounted) return;
+              Navigator.pop(context); // Geri dön
             },
           ),
-        ],
-        bottom: TabBar(
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Ayarlar',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                );
+              },
+            ),
+          ],
+          bottom: TabBar(
+            controller: _tabController,
+            tabs: const [
+              Tab(text: 'Canlı'),
+              Tab(text: 'Geçmiş'),
+            ],
+          ),
+        ),
+        body: TabBarView(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Live'),
-            Tab(text: 'History'),
+          children: [
+            _buildLiveTab(),
+            _buildHistoryTab(),
           ],
         ),
+        floatingActionButton: _tabController.index == 0 ? FloatingActionButton.extended(
+          onPressed: _isListening ? _stopContinuousListening : _apiConnected ? _startContinuousListening : null,
+          backgroundColor: _isListening ? Colors.red : Colors.green,
+          icon: Icon(_isListening ? Icons.stop : Icons.hearing),
+          label: Text(_isListening ? 'Durdur' : 'Dinle'),
+        ) : null,
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildLiveTab(),
-          _buildHistoryTab(),
-        ],
-      ),
-      floatingActionButton: _tabController.index == 0 ? FloatingActionButton.extended(
-        onPressed: _isListening ? _stopContinuousListening : _apiConnected ? _startContinuousListening : null,
-        backgroundColor: _isListening ? Colors.red : Colors.green,
-        icon: Icon(_isListening ? Icons.stop : Icons.hearing),
-        label: Text(_isListening ? 'Stop' : 'Listen'),
-      ) : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
   
@@ -216,7 +247,7 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
               ),
               const SizedBox(width: 8),
               Text(
-                _apiConnected ? 'API Connected' : 'API Disconnected',
+                _apiConnected ? 'API Bağlı' : 'API Bağlı Değil',
                 style: TextStyle(
                   color: _apiConnected ? Colors.green : Colors.red,
                   fontWeight: FontWeight.bold,
@@ -226,7 +257,7 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: _checkApiConnection,
-                tooltip: 'Check connection',
+                tooltip: 'Bağlantıyı kontrol et',
               ),
             ],
           ),
@@ -248,7 +279,7 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Recording: $_secondsRemaining seconds remaining',
+                    'Kayıt: $_secondsRemaining saniye kaldı',
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -279,7 +310,7 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
-                    'Processing audio...',
+                    'Ses işleniyor...',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -376,8 +407,8 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
               ? Center(
                   child: Text(
                     _currentError != null 
-                        ? 'Error occurred. Please check and try again.'
-                        : 'No sounds detected yet.\nPress the Listen button to start analysis.',
+                        ? 'Bir hata oluştu. Lütfen kontrol edip tekrar deneyin.'
+                        : 'Henüz ses algılanmadı.\nAnalize başlamak için Dinle butonuna basın.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 16),
                   ),
@@ -398,8 +429,8 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
           padding: const EdgeInsets.all(16.0),
           child: Text(
             _isListening
-                ? 'Listening for emergency sounds...'
-                : 'Press the Listen button to start continuous detection',
+                ? 'Acil durum seslerini dinliyor...'
+                : 'Sürekli algılamayı başlatmak için Dinle butonuna basın',
             style: const TextStyle(fontSize: 16),
           ),
         ),
@@ -416,7 +447,7 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
           padding: const EdgeInsets.all(16),
           alignment: Alignment.centerLeft,
           child: const Text(
-            'Recent Detection History',
+            'Son Algılama Geçmişi',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -486,8 +517,8 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Text(
-            'Swipe left on any result to evaluate the detection accuracy. '
-            'Your feedback helps improve the model.',
+            'Algılama doğruluğunu değerlendirmek için herhangi bir sonucu sola kaydırın. '
+            'Geri bildiriminiz modelin iyileştirilmesine yardımcı olur.',
             style: TextStyle(
               fontStyle: FontStyle.italic,
             ),
@@ -498,8 +529,8 @@ class _SoundDetectionScreenState extends State<SoundDetectionScreen> with Single
           child: recentResults.isEmpty
               ? const Center(
                   child: Text(
-                    'No detection history available.\n'
-                    'Start detection to create history.',
+                    'Algılama geçmişi mevcut değil.\n'
+                    'Geçmiş oluşturmak için algılamayı başlatın.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 16),
                   ),

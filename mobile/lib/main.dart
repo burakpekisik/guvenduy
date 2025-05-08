@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'screens/auth_wrapper.dart';
+import 'screens/register_screen.dart';
 import 'screens/sound_detection_screen.dart';
 import 'services/settings_service.dart';
 
@@ -23,12 +25,17 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Emergency Sound Detection',
+      title: 'Ses Tanıma Uygulaması',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const SoundDetectionScreen(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const AuthWrapper(),
+        '/register': (context) => const RegisterScreen(),
+        '/sound_detection': (context) => const SoundDetectionScreen(),
+      },
     );
   }
 }

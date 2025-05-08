@@ -1,0 +1,4 @@
+__pycache__
+evaluated_uploads
+temp_uploads
+*.h5

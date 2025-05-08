@@ -13,9 +13,16 @@ class SoundDetectionService {
   StreamSubscription? _audioSubscription;
   bool _isDetecting = false;
   bool _isProcessing = false;  // Flag to track processing state
+  String? _authToken;
 
   Future<bool> checkApiConnection() async {
     return await _apiService.checkHealth();
+  }
+
+  // Token eklemek için yeni metot
+  void setAuthToken(String token) {
+    _authToken = token;
+    _apiService.setAuthToken(token);
   }
 
   void startDetection(Stream<File> audioFileStream) {
