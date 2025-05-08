@@ -21,9 +21,12 @@ dependencies:
   permission_handler: ^10.2.0
   shared_preferences: ^2.5.3
   device_info_plus: ^11.3.0
+  google_maps_flutter: ^2.12.1
+  geolocator: ^10.0.0
   
   cupertino_icons: ^1.0.8
 
+  uuid: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

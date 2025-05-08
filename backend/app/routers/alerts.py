@@ -13,7 +13,7 @@ from app.database import (
     get_active_notifiable_classes, update_notifiable_class, update_user_location, 
     create_alert, get_alerts_in_radius
 )
-from app.auth import get_current_active_user, check_admin_privilege
+from app.auth import get_current_active_user, check_admin_privilege, get_optional_current_user
 
 router = APIRouter(
     prefix="/alerts",
@@ -60,25 +60,27 @@ async def create_new_notifiable_class(
 @router.get("/classes", response_model=List[NotifiableClassResponse])
 async def get_notifiable_classes(
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_active_user),
-    include_inactive: bool = False
+    include_inactive: bool = False,
+    current_user: User = Depends(get_optional_current_user)
 ):
     """
     Get all notifiable sound classes
     
     By default, only active classes are returned. Set include_inactive=true to get all classes.
+    This endpoint is public and does not require authentication.
     """
-    if include_inactive and current_user.privilege != "admin" and current_user.privilege != "super_admin":
+    # Admin check only if include_inactive=true and user is authenticated
+    if include_inactive and current_user and current_user.privilege != "admin" and current_user.privilege != "super_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can view inactive classes"
         )
     
-    if include_inactive:
+    if include_inactive and current_user and (current_user.privilege == "admin" or current_user.privilege == "super_admin"):
         # For admins, get all classes
         classes = db.query(NotifiableClass).all()
     else:
-        # For normal users, get only active classes
+        # For normal users and unauthenticated users, get only active classes
         classes = get_active_notifiable_classes(db)
     
     return classes
@@ -227,7 +229,7 @@ async def create_new_alert(
 async def get_nearby_alerts(
     query: AlertQueryParams = Depends(),
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_optional_current_user)
 ):
     """
     Get alerts in the vicinity of the specified location
@@ -235,6 +237,8 @@ async def get_nearby_alerts(
     This endpoint returns alerts that are within the specified radius
     of the given coordinates. Useful for checking if there are any 
     recent alerts in the user's area.
+    
+    This endpoint is public and does not require authentication.
     """
     alerts = get_alerts_in_radius(
         db=db,

@@ -2,13 +2,15 @@ from typing import Optional, Dict, Any, Union
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, UserPrivilege
 from app.database import get_user_by_username, verify_password, get_db_session, User
 
-# OAuth2 Password Bearer token setup
+# OAuth2 Password Bearer token setup with auto_error=False to make it optional
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
+# Standard OAuth2 Password Bearer token for required authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 # Token data model
@@ -80,6 +82,31 @@ async def get_current_user(
         raise credentials_exception
     
     return user
+
+async def get_optional_current_user(
+    db: Session = Depends(get_db_session),
+    token: Optional[str] = Depends(oauth2_scheme_optional)
+) -> Optional[User]:
+    """
+    Get the current user from the JWT token if available, otherwise return None.
+    This allows endpoints to work with or without authentication.
+    """
+    if token is None:
+        return None
+        
+    try:
+        # Decode the JWT token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        
+        if username is None:
+            return None
+        
+        # Get the user from the database
+        user = get_user_by_username(db, username)
+        return user
+    except JWTError:
+        return None
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """

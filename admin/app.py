@@ -798,8 +798,11 @@ def user_management_page():
         st.warning("You need administrator privileges to access this page.")
         return
     
-    # Create tabs for different user management features
-    tab1, tab2, tab3 = st.tabs(["User List", "Update User", "Delete User"])
+    # Kullanıcı düzenleme ve silme için session state değişkenleri
+    if 'edit_user_id' not in st.session_state:
+        st.session_state.edit_user_id = None
+    if 'delete_user_id' not in st.session_state:
+        st.session_state.delete_user_id = None
     
     # Get users from the API
     response = api_request("/auth/users")
@@ -807,101 +810,114 @@ def user_management_page():
     if response and response.status_code == 200:
         users = safe_get_json(response, [])
         
-        # Tab 1: User List & Privilege Management
-        with tab1:
-            # Display users table
-            if users:
-                df = pd.DataFrame(users)
-                
-                if "created_at" in df.columns:
-                    df["created_at"] = pd.to_datetime(df["created_at"]).dt.strftime("%Y-%m-%d %H:%M:%S")
-                
-                # Remove password hash from display
-                if "password_hash" in df.columns:
-                    df = df.drop(columns=["password_hash"])
-                
-                st.dataframe(df, use_container_width=True)
-                
-                # User privilege management
-                st.subheader("Update User Privileges")
-                
-                user_id = st.selectbox(
-                    "Select User",
-                    options=df["id"].tolist(),
-                    format_func=lambda x: df[df["id"] == x]["username"].iloc[0],
-                    key="privilege_user_select"
+        # Kullanıcı listesi
+        st.subheader("User List")
+        
+        if users:
+            df = pd.DataFrame(users)
+            
+            if "created_at" in df.columns:
+                df["created_at"] = pd.to_datetime(df["created_at"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Remove password hash from display
+            if "password_hash" in df.columns:
+                df = df.drop(columns=["password_hash"])
+            
+            # Kullanıcı listesini geleneksel tablo olarak göster, sonra her kullanıcı için Edit/Delete butonları ekle
+            columns_to_display = ["id", "username", "email", "privilege", "created_at"]
+            columns_to_display = [col for col in columns_to_display if col in df.columns]
+            
+            # Tabloyu göster (index kullanmadan)
+            st.dataframe(df[columns_to_display], use_container_width=True, hide_index=True)
+            
+            # Kullanıcı seçimi için selectbox
+            current_username = st.session_state.username
+            user_options = [(user["id"], user["username"]) for user in users]
+            
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.write("#### Edit User")
+                selected_user_id = st.selectbox(
+                    "Select user to edit",
+                    options=[user[0] for user in user_options],
+                    format_func=lambda x: next((user[1] for user in user_options if user[0] == x), ""),
+                    key="edit_user_select"
                 )
                 
-                if user_id:
-                    selected_user = df[df["id"] == user_id].iloc[0]
+                if st.button("Edit Selected User", key="edit_button"):
+                    st.session_state.edit_user_id = selected_user_id
+                    st.session_state.delete_user_id = None
+                    st.rerun()
+            
+            with col2:
+                st.write("#### Delete User")
+                # Mevcut kullanıcıyı filtreleme (kendini silemez)
+                delete_options = [(user[0], user[1]) for user in user_options if user[1] != current_username]
+                
+                if delete_options:
+                    selected_delete_id = st.selectbox(
+                        "Select user to delete",
+                        options=[user[0] for user in delete_options],
+                        format_func=lambda x: next((user[1] for user in delete_options if user[0] == x), ""),
+                        key="delete_user_select"
+                    )
                     
-                    with st.form("update_privilege_form"):
+                    if st.button("Delete Selected User", key="delete_button"):
+                        st.session_state.delete_user_id = selected_delete_id
+                        st.session_state.edit_user_id = None
+                        st.rerun()
+                else:
+                    st.info("No users available to delete (you cannot delete your own account)")
+            
+            # Kullanıcı düzenleme formu
+            if st.session_state.edit_user_id:
+                with st.expander("Edit User", expanded=True):
+                    selected_user = df[df["id"] == st.session_state.edit_user_id].iloc[0]
+                    
+                    with st.form("edit_user_form"):
+                        st.subheader(f"Edit User: {selected_user['username']}")
+                        
+                        # Kullanıcı bilgileri
+                        username = st.text_input("Username", value=selected_user["username"])
+                        email = st.text_input("Email", value=selected_user["email"])
                         privilege = st.selectbox(
                             "Privilege Level",
                             options=["user", "admin", "super_admin"],
                             index=["user", "admin", "super_admin"].index(selected_user.get("privilege", "user"))
                         )
                         
-                        submit = st.form_submit_button("Update Privilege")
-                        
-                        if submit:
-                            data = {"privilege": privilege}
-                            response = api_request(f"/auth/users/{user_id}/privilege", method="PUT", data=data)
-                            
-                            if response and response.status_code == 200:
-                                st.success(f"User privileges updated successfully!")
-                                # Clear cache and reload the page to show updated data
-                                st.cache_data.clear()
-                                st.rerun()
-                            else:
-                                st.error("Failed to update user privileges")
-            else:
-                st.info("No users found")
-        
-        # Tab 2: Update User Information
-        with tab2:
-            st.subheader("Update User Information")
-            
-            if users:
-                user_id = st.selectbox(
-                    "Select User to Update",
-                    options=df["id"].tolist(),
-                    format_func=lambda x: df[df["id"] == x]["username"].iloc[0],
-                    key="update_user_select"
-                )
-                
-                if user_id:
-                    selected_user = df[df["id"] == user_id].iloc[0]
-                    
-                    with st.form("update_user_form"):
-                        username = st.text_input("Username", value=selected_user["username"])
-                        email = st.text_input("Email", value=selected_user["email"])
-                        
-                        # Password is optional for updates - blank means don't change
+                        # Şifre değiştirme (opsiyonel)
                         st.write("Leave password blank to keep current password")
                         password = st.text_input("New Password (optional)", type="password")
                         
-                        update_submit = st.form_submit_button("Update User")
+                        col1, col2 = st.columns([1, 1])
+                        with col1:
+                            submit = st.form_submit_button("Update User")
+                        with col2:
+                            cancel = st.form_submit_button("Cancel")
                         
-                        if update_submit:
-                            # Only send non-empty values to API - empty password means no change
+                        if submit:
+                            # Güncelleme verilerini hazırla
                             data = {
                                 "username": username,
-                                "email": email
+                                "email": email,
+                                "privilege": privilege
                             }
                             
-                            # Only include password if provided
+                            # Şifre yalnızca belirtilmişse dahil edilsin
                             if password:
                                 data["password"] = password
                             
-                            # Make API request to update user
-                            response = api_request(f"/auth/users/{user_id}", method="PUT", data=data)
+                            # Kullanıcı bilgilerini güncelle
+                            response = api_request(f"/auth/users/{st.session_state.edit_user_id}", method="PUT", data=data)
                             
                             if response and response.status_code == 200:
                                 st.success(f"User '{username}' updated successfully!")
-                                # Clear cache and reload the page to show updated data
-                                st.cache_data.clear()
-                                st.rerun()
+                                st.session_state.edit_user_id = None
+                                st.cache_data.clear()  # Cache'i temizle
+                                time.sleep(0.5)  # Kısa bir bekleme
+                                st.rerun()  # Sayfayı yenile
                             else:
                                 error_detail = "Unknown error"
                                 if response:
@@ -912,64 +928,57 @@ def user_management_page():
                                         error_detail = f"Status code: {response.status_code}"
                                 
                                 st.error(f"Failed to update user: {error_detail}")
-            else:
-                st.info("No users found to update")
-        
-        # Tab 3: Delete User
-        with tab3:
-            st.subheader("Delete User")
+                        
+                        if cancel:
+                            st.session_state.edit_user_id = None
+                            st.rerun()
             
-            if users:
-                current_username = st.session_state.username
-                # Filter out the current user - can't delete yourself
-                filtered_users = [u for u in users if u["username"] != current_username]
-                
-                if filtered_users:
-                    user_ids = [u["id"] for u in filtered_users]
-                    user_usernames = [u["username"] for u in filtered_users]
+            # Kullanıcı silme onayı
+            if st.session_state.delete_user_id:
+                with st.expander("Delete User", expanded=True):
+                    selected_user = df[df["id"] == st.session_state.delete_user_id].iloc[0]
+                    selected_username = selected_user["username"]
                     
-                    user_index = st.selectbox(
-                        "Select User to Delete",
-                        options=range(len(user_ids)),
-                        format_func=lambda i: user_usernames[i],
-                        key="delete_user_select"
-                    )
-                    
-                    selected_user_id = user_ids[user_index]
-                    selected_username = user_usernames[user_index]
-                    
+                    st.subheader(f"Delete User: {selected_username}")
                     st.warning(f"⚠️ WARNING: Deleting a user is permanent and cannot be undone!")
                     
-                    # Confirmation with username typing
+                    # Silme onayı için kullanıcı adı doğrulaması
                     st.write(f"Type '{selected_username}' to confirm deletion:")
-                    confirmation = st.text_input("Confirmation", key="delete_confirmation")
+                    confirmation = st.text_input("Confirmation", key="delete_confirmation_input")
                     
-                    if st.button("Delete User", type="primary", help="This will permanently delete the user"):
-                        if confirmation == selected_username:
-                            # Make API request to delete user
-                            response = api_request(f"/auth/users/{selected_user_id}", method="DELETE")
-                            
-                            if response and response.status_code == 200:
-                                st.success(f"User '{selected_username}' has been deleted successfully!")
-                                # Clear cache and reload the page to show updated data
-                                st.cache_data.clear()
-                                st.rerun()
-                            else:
-                                error_detail = "Unknown error"
-                                if response:
-                                    try:
-                                        error_data = response.json()
-                                        error_detail = error_data.get("detail", "Unknown error")
-                                    except:
-                                        error_detail = f"Status code: {response.status_code}"
+                    col1, col2 = st.columns([1, 1])
+                    
+                    with col1:
+                        if st.button("Confirm Delete", type="primary", help="This will permanently delete the user"):
+                            if confirmation == selected_username:
+                                # Kullanıcıyı sil
+                                response = api_request(f"/auth/users/{st.session_state.delete_user_id}", method="DELETE")
                                 
-                                st.error(f"Failed to delete user: {error_detail}")
-                        else:
-                            st.error("Confirmation text doesn't match the username. Please try again.")
-                else:
-                    st.info("No users available to delete (you cannot delete your own account)")
-            else:
-                st.info("No users found to delete")
+                                if response and response.status_code == 200:
+                                    st.success(f"User '{selected_username}' has been deleted successfully!")
+                                    st.session_state.delete_user_id = None
+                                    st.cache_data.clear()  # Cache'i temizle
+                                    time.sleep(0.5)  # Kısa bir bekleme
+                                    st.rerun()  # Sayfayı yenile
+                                else:
+                                    error_detail = "Unknown error"
+                                    if response:
+                                        try:
+                                            error_data = response.json()
+                                            error_detail = error_data.get("detail", "Unknown error")
+                                        except:
+                                            error_detail = f"Status code: {response.status_code}"
+                                    
+                                    st.error(f"Failed to delete user: {error_detail}")
+                            else:
+                                st.error("Confirmation text doesn't match the username. Please try again.")
+                    
+                    with col2:
+                        if st.button("Cancel"):
+                            st.session_state.delete_user_id = None
+                            st.rerun()
+        else:
+            st.info("No users found")
     else:
         st.warning("Could not retrieve user list. Please make sure the API is running and you have administrative privileges.")
 

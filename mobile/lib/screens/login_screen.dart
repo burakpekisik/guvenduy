@@ -4,7 +4,7 @@ import '../services/auth_service.dart';
 class LoginScreen extends StatefulWidget {
   final Function() onLoginSuccess;
 
-  const LoginScreen({Key? key, required this.onLoginSuccess}) : super(key: key);
+  const LoginScreen({super.key, required this.onLoginSuccess});
 
   @override
   _LoginScreenState createState() => _LoginScreenState();

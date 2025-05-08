@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:io';
 import 'package:record/record.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/settings_service.dart';
-import '../models/app_settings.dart';
 
 class AudioService {
   late final AudioRecorder _audioRecorder;

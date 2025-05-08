@@ -125,6 +125,19 @@ class EvaluationService {
     }
   }
   
+  // Get evaluated results (for history tab)
+  Future<List<SoundDetectionResult>> getEvaluatedResults() async {
+    // First, make sure we've loaded the previous results
+    if (_recentResults.isEmpty) {
+      await loadPreviousResults();
+    }
+    
+    // Return all saved results
+    // In a real implementation, you might want to filter by evaluation status
+    // or fetch evaluated results from the server
+    return _recentResults;
+  }
+  
   // Submit an evaluation for a detection result
   Future<bool> submitEvaluation(SoundDetectionResult result, bool success) async {
     try {

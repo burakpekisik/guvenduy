@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 
 class PlatformHelper {
   /// Determines if the app is running in a debug or release mode

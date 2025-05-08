@@ -23,7 +23,7 @@ class AuthService {
     String? registerEndpoint,
     String? meEndpoint,
   }) : 
-    baseUrl = baseUrl ?? dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000',
+    baseUrl = baseUrl ?? dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:8000',
     authBaseUrl = authBaseUrl ?? dotenv.env['AUTH_BASE_URL'] ?? '/auth',
     loginEndpoint = loginEndpoint ?? dotenv.env['AUTH_LOGIN_ENDPOINT'] ?? '/token',
     registerEndpoint = registerEndpoint ?? dotenv.env['AUTH_REGISTER_ENDPOINT'] ?? '/register',

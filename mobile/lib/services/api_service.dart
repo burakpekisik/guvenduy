@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/sound_detection_result.dart';
 import '../services/settings_service.dart';
-import '../models/app_settings.dart';
 import '../models/sound_detection_evaluation.dart';
 
 class ApiService {
@@ -21,7 +20,7 @@ class ApiService {
     String? healthEndpoint,
     String? evaluationsEndpoint,
   }) : 
-    baseUrl = baseUrl ?? dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000',
+    baseUrl = baseUrl ?? dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:8000',
     predictEndpoint = predictEndpoint ?? dotenv.env['API_PREDICT_ENDPOINT'] ?? '/audio/predict',
     healthEndpoint = healthEndpoint ?? dotenv.env['API_HEALTH_ENDPOINT'] ?? '/health',
     evaluationsEndpoint = evaluationsEndpoint ?? dotenv.env['API_EVALUATIONS_ENDPOINT'] ?? '/evaluations/';

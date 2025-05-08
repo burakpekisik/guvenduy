@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/auth_wrapper.dart';
+import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/sound_detection_screen.dart';
 import 'services/settings_service.dart';
@@ -30,9 +31,13 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      initialRoute: '/',
+      // Doğrudan ses tanıma ekranıyla başla
+      initialRoute: '/sound_detection',
       routes: {
         '/': (context) => const AuthWrapper(),
+        '/login': (context) => LoginScreen(onLoginSuccess: () {
+          Navigator.pushReplacementNamed(context, '/sound_detection');
+        }),
         '/register': (context) => const RegisterScreen(),
         '/sound_detection': (context) => const SoundDetectionScreen(),
       },

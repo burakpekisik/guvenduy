@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import '../models/sound_detection_result.dart';
 import '../services/evaluation_service.dart';
+import '../services/alerts_service.dart';
+import '../models/notifiable_class.dart';
+import '../screens/create_alert_screen.dart';
 
 class SwipeableDetectionTile extends StatefulWidget {
   final SoundDetectionResult result;
   final VoidCallback? onEvaluationSubmitted;
+  final VoidCallback? onAlertCreated;
 
   const SwipeableDetectionTile({
-    Key? key,
+    super.key,
     required this.result,
     this.onEvaluationSubmitted,
-  }) : super(key: key);
+    this.onAlertCreated,
+  });
 
   @override
   State<SwipeableDetectionTile> createState() => _SwipeableDetectionTileState();
@@ -18,21 +23,68 @@ class SwipeableDetectionTile extends StatefulWidget {
 
 class _SwipeableDetectionTileState extends State<SwipeableDetectionTile> {
   final EvaluationService _evaluationService = EvaluationService();
+  final AlertsService _alertsService = AlertsService();
   bool _isEvaluating = false;
+  bool _isLoading = false;
   String? _evaluationStatus;
+  List<NotifiableClass>? _alertClasses;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAlertClasses();
+  }
+
+  Future<void> _loadAlertClasses() async {
+    try {
+      final classes = await _alertsService.getNotifiableClasses();
+      setState(() {
+        _alertClasses = classes;
+      });
+    } catch (e) {
+      print('Error loading alert classes: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Dismissible(
       key: Key('${widget.result.timestamp.millisecondsSinceEpoch}-${widget.result.soundType}'),
-      direction: DismissDirection.endToStart, // Right to left only
+      // Enable swipe from both directions
+      direction: DismissDirection.horizontal,
       confirmDismiss: (direction) async {
-        // Show evaluation options
-        await _showEvaluationOptions();
+        if (direction == DismissDirection.endToStart) {
+          // Right to left: Evaluation
+          await _showEvaluationOptions();
+        } else if (direction == DismissDirection.startToEnd) {
+          // Left to right: Create alert
+          await _showAlertOptions();
+        }
         // Never actually dismiss the item
         return false;
       },
+      // Background for right to left swipe (evaluation)
       background: Container(
+        color: Colors.green,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Icon(Icons.warning, color: Colors.white),
+            SizedBox(width: 8),
+            Text(
+              'Alert',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+      // Background for left to right swipe (alert)
+      secondaryBackground: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -59,7 +111,7 @@ class _SwipeableDetectionTileState extends State<SwipeableDetectionTile> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Status indicator if evaluating
-              if (_isEvaluating || _evaluationStatus != null)
+              if (_isEvaluating || _isLoading || _evaluationStatus != null)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(6),
@@ -74,7 +126,7 @@ class _SwipeableDetectionTileState extends State<SwipeableDetectionTile> {
                   ),
                   child: Row(
                     children: [
-                      _isEvaluating
+                      _isEvaluating || _isLoading
                           ? const SizedBox(
                               width: 16,
                               height: 16,
@@ -100,7 +152,9 @@ class _SwipeableDetectionTileState extends State<SwipeableDetectionTile> {
                         child: Text(
                           _isEvaluating
                               ? 'Submitting evaluation...'
-                              : _evaluationStatus ?? '',
+                              : _isLoading
+                                  ? 'Loading alert classes...'
+                                  : _evaluationStatus ?? '',
                           style: TextStyle(
                             fontSize: 12,
                             color: _evaluationStatus?.contains('successfully') == true
@@ -192,25 +246,47 @@ class _SwipeableDetectionTileState extends State<SwipeableDetectionTile> {
                 ),
               ),
               
-              // Hint text for evaluation
+              // Swipe hints
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(
-                      Icons.swipe_left,
-                      size: 14,
-                      color: Colors.grey.shade500,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.swipe_right,
+                          size: 14,
+                          color: Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Swipe for alert',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Swipe to evaluate',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade500,
-                        fontStyle: FontStyle.italic,
-                      ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.swipe_left,
+                          size: 14,
+                          color: Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Swipe to evaluate',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -234,7 +310,7 @@ class _SwipeableDetectionTileState extends State<SwipeableDetectionTile> {
                       ),
                     ),
                   ),
-                ).toList(),
+                ),
               ],
             ],
           ),
@@ -286,6 +362,157 @@ class _SwipeableDetectionTileState extends State<SwipeableDetectionTile> {
         );
       },
     );
+  }
+  
+  Future<void> _showAlertOptions() async {
+    // If alert classes have not been loaded yet, load them
+    if (_alertClasses == null) {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      await _loadAlertClasses();
+      
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (_alertClasses == null || _alertClasses!.isEmpty) {
+        setState(() {
+          _evaluationStatus = 'Error: No alert classes found';
+        });
+        return;
+      }
+    }
+    
+    // Find matching alert class for the sound type
+    final matchingClasses = _findMatchingAlertClasses(widget.result.soundType);
+    
+    if (matchingClasses.isEmpty) {
+      setState(() {
+        _evaluationStatus = 'No matching alert class found for this sound type';
+      });
+      return;
+    }
+    
+    // If there's only one matching class, go directly to the create alert screen
+    if (matchingClasses.length == 1) {
+      _navigateToCreateAlert(matchingClasses.first);
+      return;
+    }
+    
+    // Otherwise, let the user choose which alert class to use
+    return showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'Create Alert',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const Divider(),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text(
+                  'Select alert type:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: matchingClasses.length,
+                  itemBuilder: (context, index) {
+                    final alertClass = matchingClasses[index];
+                    return ListTile(
+                      leading: const Icon(Icons.warning, color: Colors.red),
+                      title: Text(alertClass.className),
+                      subtitle: Text(alertClass.description ?? ''),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToCreateAlert(alertClass);
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+  
+  Future<void> _navigateToCreateAlert(NotifiableClass alertClass) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateAlertScreen(
+          result: widget.result,
+          alertClass: alertClass,
+        ),
+      ),
+    );
+    
+    if (result == true) {
+      setState(() {
+        _evaluationStatus = 'Alert created successfully';
+      });
+      
+      if (widget.onAlertCreated != null) {
+        widget.onAlertCreated!();
+      }
+    }
+  }
+  
+  List<NotifiableClass> _findMatchingAlertClasses(String soundType) {
+    if (_alertClasses == null || _alertClasses!.isEmpty) {
+      return [];
+    }
+    
+    // Map sound types to potential alert class names
+    // This mapping should be customized based on your specific use case
+    final Map<String, List<String>> soundTypeToAlertClasses = {
+      'siren': ['siren', 'emergency'],
+      'emergency_vehicle': ['emergency', 'emergency_vehicle', 'siren'],
+      'horn': ['horn', 'car_horn'],
+      'car_horn': ['horn', 'car_horn'],
+      'alarm_clock': ['alarm', 'alarm_clock'],
+      'fire_alarm': ['fire_alarm', 'alarm', 'emergency'],
+      'gun': ['gunshot', 'gun', 'shooting'],
+      'explosion': ['explosion', 'emergency'],
+      'car_crash': ['car_crash', 'accident', 'emergency'],
+      'thunder': ['thunder', 'storm'],
+      // Add more mappings as needed
+    };
+    
+    // Get possible alert class names for this sound type
+    final possibleClassNames = soundTypeToAlertClasses[soundType.toLowerCase()] ?? [soundType.toLowerCase()];
+    
+    // Find matching alert classes
+    final List<NotifiableClass> matches = [];
+    
+    for (final alertClass in _alertClasses!) {
+      final className = alertClass.className.toLowerCase();
+      
+      // Check if the alert class matches any of the possible class names
+      if (possibleClassNames.any((possibleName) => className.contains(possibleName) || possibleName.contains(className))) {
+        matches.add(alertClass);
+      }
+    }
+    
+    // If no specific matches, return all active alert classes as fallback
+    return matches.isNotEmpty ? matches : _alertClasses!.where((c) => c.isActive).toList();
   }
   
   Future<void> _submitEvaluation(bool success) async {

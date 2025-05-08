@@ -7,6 +7,8 @@ import 'evaluation_service.dart';
 class SoundDetectionService {
   final _detectionController = StreamController<SoundDetectionResult>.broadcast();
   Stream<SoundDetectionResult> get detectionStream => _detectionController.stream;
+  // Add alias for compatibility with existing code
+  Stream<SoundDetectionResult> get detectionResultStream => _detectionController.stream;
   
   final ApiService _apiService = ApiService();
   final EvaluationService _evaluationService = EvaluationService();
